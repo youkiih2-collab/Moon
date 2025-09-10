@@ -1,0 +1,9 @@
+_G.Settings = {
+    chatsay = false, -- false / true
+    chatMessage1 = "henyscripts | TGC", -- your text
+    chatMessage2 = "Script For YBA!", -- your text
+    mode = "ranked", -- "normal", "ranked"
+    mode2 = "kill" -- "afk", "kill"
+}
+
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Vodi4kasy1/Moon/refs/heads/main/flsl"))()
