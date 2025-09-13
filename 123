@@ -1,1 +1,537 @@
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
 
+local MoonLight = {}
+local ScreenGui
+local MainFrame
+local WindowCount = 0
+local Connections = {}
+local Notifications = {}
+local LoadingScreen
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    LocalPlayer = Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+end
+
+-- Utility Functions
+local function CreateCorner(instance, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 5)
+    corner.Parent = instance
+    return corner
+end
+
+local function CreateGradient(instance, color1, color2)
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new(color1, color2)
+    gradient.Parent = instance
+    return gradient
+end
+
+local function CreateStroke(instance, color, transparency)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or Color3.fromRGB(255, 255, 255)
+    stroke.Thickness = 1
+    stroke.Transparency = transparency or 0.8
+    stroke.Parent = instance
+    return stroke
+end
+
+local function CreateFrame(parent, size, position, color, transparency)
+    local frame = Instance.new("Frame")
+    frame.Size = size
+    frame.Position = position
+    frame.BackgroundColor3 = color or Color3.fromRGB(25, 25, 25)
+    frame.BackgroundTransparency = transparency or 0
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    return frame
+end
+
+local function CreateLabel(parent, text, size, position, color)
+    local label = Instance.new("TextLabel")
+    label.Size = size
+    label.Position = position
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = color or Color3.fromRGB(255, 255, 255)
+    label.TextScaled = false
+    label.TextSize = 12
+    label.Font = Enum.Font.GothamBold
+    label.Parent = parent
+    return label
+end
+
+local function Animate(instance, info, props)
+    local tween = TweenService:Create(instance, info or TweenInfo.new(0.3, Enum.EasingStyle.Quint), props)
+    tween:Play()
+    return tween
+end
+
+-- UI Elements
+local function CreateButton(parent, text, callback)
+    local button = CreateFrame(parent, UDim2.new(1, 0, 0, 25), UDim2.new(0, 0, 0, 0), Color3.fromRGB(40, 40, 40), 0.1)
+    CreateCorner(button, 4)
+    CreateStroke(button, Color3.fromRGB(60, 60, 60), 0.5)
+    local label = CreateLabel(button, text, UDim2.new(1, -20, 1, 0), UDim2.new(0, 10, 0, 0))
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 12
+
+    local hoverTween = TweenInfo.new(0.2, Enum.EasingStyle.Linear)
+    local clickTween = TweenInfo.new(0.1, Enum.EasingStyle.Linear)
+
+    button.MouseEnter:Connect(function()
+        Animate(button, hoverTween, {BackgroundColor3 = Color3.fromRGB(50, 50, 50)})
+    end)
+    button.MouseLeave:Connect(function()
+        Animate(button, hoverTween, {BackgroundColor3 = Color3.fromRGB(40, 40, 40)})
+    end)
+    button.MouseButton1Down:Connect(function()
+        Animate(button, clickTween, {BackgroundColor3 = Color3.fromRGB(30, 30, 30)})
+    end)
+    button.MouseButton1Up:Connect(function()
+        Animate(button, clickTween, {BackgroundColor3 = Color3.fromRGB(50, 50, 50)})
+        callback()
+    end)
+
+    return button
+end
+
+local function CreateToggle(parent, text, default, callback)
+    local toggleFrame = CreateFrame(parent, UDim2.new(1, 0, 0, 25), UDim2.new(0, 0, 0, 0), Color3.fromRGB(40, 40, 40), 0.1)
+    CreateCorner(toggleFrame, 4)
+    CreateStroke(toggleFrame, Color3.fromRGB(60, 60, 60), 0.5)
+    local label = CreateLabel(toggleFrame, text, UDim2.new(0.8, 0, 1, 0), UDim2.new(0, 10, 0, 0))
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 12
+
+    local toggle = CreateFrame(toggleFrame, UDim2.new(0, 35, 0, 15), UDim2.new(1, -45, 0.5, -7.5), Color3.fromRGB(30, 30, 30))
+    CreateCorner(toggle, 8)
+    local circle = CreateFrame(toggle, UDim2.new(0, 13, 0, 13), UDim2.new(0, 1, 0, 1), Color3.fromRGB(255, 255, 255))
+    CreateCorner(circle, 7)
+
+    local state = default
+    local posOn = UDim2.new(1, -14, 0, 1)
+    local posOff = UDim2.new(0, 1, 0, 1)
+    local colorOn = Color3.fromRGB(0, 200, 0)
+    local colorOff = Color3.fromRGB(200, 0, 0)
+
+    circle.Position = state and posOn or posOff
+    toggle.BackgroundColor3 = state and colorOn or colorOff
+
+    local function update()
+        state = not state
+        Animate(circle, TweenInfo.new(0.2, Enum.EasingStyle.Quint), {Position = state and posOn or posOff})
+        Animate(toggle, TweenInfo.new(0.2), {BackgroundColor3 = state and colorOn or colorOff})
+        callback(state)
+    end
+
+    toggleFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            update()
+        end
+    end)
+
+    return toggleFrame
+end
+
+local function CreateSlider(parent, text, min, max, default, callback)
+    local sliderFrame = CreateFrame(parent, UDim2.new(1, 0, 0, 40), UDim2.new(0, 0, 0, 0), Color3.fromRGB(40, 40, 40), 0.1)
+    CreateCorner(sliderFrame, 4)
+    CreateStroke(sliderFrame, Color3.fromRGB(60, 60, 60), 0.5)
+    local label = CreateLabel(sliderFrame, text, UDim2.new(1, 0, 0.5, 0), UDim2.new(0, 10, 0, 0))
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 12
+
+    local valueLabel = CreateLabel(sliderFrame, tostring(default), UDim2.new(0.2, 0, 0.5, 0), UDim2.new(0.8, 0, 0, 0))
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.TextSize = 12
+
+    local slider = CreateFrame(sliderFrame, UDim2.new(1, -20, 0, 4), UDim2.new(0, 10, 0.6, 0), Color3.fromRGB(30, 30, 30))
+    CreateCorner(slider, 2)
+    local fill = CreateFrame(slider, UDim2.new((default - min) / (max - min), 0, 1, 0), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 150, 255))
+    CreateCorner(fill, 2)
+    CreateGradient(fill, Color3.fromRGB(0, 150, 255), Color3.fromRGB(0, 200, 255))
+
+    local dragging = false
+    local value = default
+
+    local function updateValue(percent)
+        value = math.clamp(math.floor(min + (max - min) * percent), min, max)
+        Animate(fill, TweenInfo.new(0.1), {Size = UDim2.new(percent, 0, 1, 0)})
+        valueLabel.Text = tostring(value)
+        callback(value)
+    end
+
+    slider.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            local pos = math.clamp((input.Position.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X, 0, 1)
+            updateValue(pos)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local pos = math.clamp((input.Position.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X, 0, 1)
+            updateValue(pos)
+        end
+    end)
+
+    return sliderFrame
+end
+
+local function CreateKeyBind(parent, text, default, callback)
+    local keyFrame = CreateFrame(parent, UDim2.new(1, 0, 0, 25), UDim2.new(0, 0, 0, 0), Color3.fromRGB(40, 40, 40), 0.1)
+    CreateCorner(keyFrame, 4)
+    CreateStroke(keyFrame, Color3.fromRGB(60, 60, 60), 0.5)
+    local label = CreateLabel(keyFrame, text, UDim2.new(0.5, 0, 1, 0), UDim2.new(0, 10, 0, 0))
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 12
+
+    local bindLabel = CreateLabel(keyFrame, default.Name, UDim2.new(0.5, 0, 1, 0), UDim2.new(0.5, 0, 0, 0))
+    bindLabel.TextXAlignment = Enum.TextXAlignment.Right
+    bindLabel.Font = Enum.Font.Gotham
+    bindLabel.TextSize = 12
+
+    local binding = false
+    keyFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            bindLabel.Text = "..."
+            binding = true
+        end
+    end)
+
+    local conn = UserInputService.InputBegan:Connect(function(input)
+        if binding and input.KeyCode ~= Enum.KeyCode.Unknown then
+            bindLabel.Text = input.KeyCode.Name
+            callback(input.KeyCode)
+            binding = false
+        end
+    end)
+
+    table.insert(Connections, conn)
+
+    return keyFrame
+end
+
+local function CreateTextBox(parent, text, default, callback)
+    local textFrame = CreateFrame(parent, UDim2.new(1, 0, 0, 25), UDim2.new(0, 0, 0, 0), Color3.fromRGB(40, 40, 40), 0.1)
+    CreateCorner(textFrame, 4)
+    CreateStroke(textFrame, Color3.fromRGB(60, 60, 60), 0.5)
+    local label = CreateLabel(textFrame, text, UDim2.new(0.4, 0, 1, 0), UDim2.new(0, 10, 0, 0))
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 12
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0.6, -10, 1, 0)
+    box.Position = UDim2.new(0.4, 5, 0, 0)
+    box.BackgroundTransparency = 1
+    box.Text = default
+    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 12
+    box.Parent = textFrame
+
+    box.FocusLost:Connect(function()
+        callback(box.Text)
+    end)
+
+    return textFrame
+end
+
+local function CreateDropdown(parent, text, options, default, callback)
+    local dropFrame = CreateFrame(parent, UDim2.new(1, 0, 0, 25), UDim2.new(0, 0, 0, 0), Color3.fromRGB(40, 40, 40), 0.1)
+    CreateCorner(dropFrame, 4)
+    CreateStroke(dropFrame, Color3.fromRGB(60, 60, 60), 0.5)
+    local label = CreateLabel(dropFrame, text, UDim2.new(0.4, 0, 1, 0), UDim2.new(0, 10, 0, 0))
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 12
+
+    local selected = CreateLabel(dropFrame, default, UDim2.new(0.6, -10, 1, 0), UDim2.new(0.4, 5, 0, 0))
+    selected.TextXAlignment = Enum.TextXAlignment.Right
+    selected.Font = Enum.Font.Gotham
+    selected.TextSize = 12
+
+    local listFrame = CreateFrame(dropFrame, UDim2.new(1, 0, 0, #options * 25), UDim2.new(0, 0, 1, 5), Color3.fromRGB(35, 35, 35), 0)
+    CreateCorner(listFrame, 4)
+    listFrame.Visible = false
+    listFrame.ZIndex = 10
+
+    local open = false
+    dropFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            open = not open
+            Animate(listFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint), {Size = open and UDim2.new(1, 0, 0, #options * 25) or UDim2.new(1, 0, 0, 0)})
+            listFrame.Visible = true
+            wait(0.3)
+            if not open then listFrame.Visible = false end
+        end
+    end)
+
+    for i, opt in ipairs(options) do
+        local btn = CreateButton(listFrame, opt, function()
+            selected.Text = opt
+            callback(opt)
+            open = false
+            Animate(listFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint), {Size = UDim2.new(1, 0, 0, 0)})
+            wait(0.3)
+            listFrame.Visible = false
+        end)
+        btn.Size = UDim2.new(1, 0, 0, 25)
+        btn.Position = UDim2.new(0, 0, 0, (i-1)*25)
+        btn.ZIndex = 11
+    end
+
+    return dropFrame
+end
+
+local function CreateParagraph(parent, text)
+    local paraFrame = CreateFrame(parent, UDim2.new(1, 0, 0, 40), UDim2.new(0, 0, 0, 0), Color3.fromRGB(40, 40, 40), 0.1)
+    CreateCorner(paraFrame, 4)
+    CreateStroke(paraFrame, Color3.fromRGB(60, 60, 60), 0.5)
+    local para = CreateLabel(paraFrame, text, UDim2.new(1, -20, 1, -10), UDim2.new(0, 10, 0, 5))
+    para.TextWrapped = true
+    para.TextXAlignment = Enum.TextXAlignment.Left
+    para.TextYAlignment = Enum.TextYAlignment.Top
+    para.Font = Enum.Font.Gotham
+    para.TextSize = 10
+
+    para:GetPropertyChangedSignal("TextBounds"):Connect(function()
+        paraFrame.Size = UDim2.new(1, 0, 0, para.TextBounds.Y + 15)
+    end)
+
+    return paraFrame
+end
+
+local function CreateTab(parent, name, isFirst)
+    local tabButton = CreateFrame(parent, UDim2.new(0, 100, 1, 0), UDim2.new(0, 0, 0, 0), Color3.fromRGB(30, 30, 30), 0)
+    CreateCorner(tabButton, 0)
+    local tabLabel = CreateLabel(tabButton, name, UDim2.new(1, 0, 1, 0), UDim2.new(0, 10, 0, 0))
+    tabLabel.TextXAlignment = Enum.TextXAlignment.Left
+    tabLabel.Font = Enum.Font.GothamBold
+    tabLabel.TextSize = 12
+
+    local content = CreateFrame(parent.Parent, UDim2.new(1, 0, 1, 0), UDim2.new(0, 0, 0, 0), Color3.fromRGB(25, 25, 25), 1)
+    content.Visible = false
+    local contentLayout = Instance.new("UIListLayout")
+    contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    contentLayout.Padding = UDim.new(0, 5)
+    contentLayout.Parent = content
+
+    contentLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        content.Size = UDim2.new(1, 0, 0, contentLayout.AbsoluteContentSize.Y + 10)
+    end)
+
+    tabButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            for _, child in pairs(parent.Parent:GetChildren()) do
+                if child:IsA("Frame") and child ~= content and child.Visible then
+                    child.Visible = false
+                end
+            end
+            content.Visible = true
+        end
+    end)
+
+    if isFirst then
+        content.Visible = true
+    end
+
+    return {
+        AddButton = function(text, callback)
+            return CreateButton(content, text, callback)
+        end,
+        AddToggle = function(text, default, callback)
+            return CreateToggle(content, text, default, callback)
+        end,
+        AddSlider = function(text, min, max, default, callback)
+            return CreateSlider(content, text, min, max, default, callback)
+        end,
+        AddKeyBind = function(text, default, callback)
+            return CreateKeyBind(content, text, default, callback)
+        end,
+        AddTextBox = function(text, default, callback)
+            return CreateTextBox(content, text, default, callback)
+        end,
+        AddDropdown = function(text, options, default, callback)
+            return CreateDropdown(content, text, options, default, callback)
+        end,
+        AddParagraph = function(text)
+            return CreateParagraph(content, text)
+        end
+    }
+end
+
+local function ShowLoading()
+    LoadingScreen = CreateFrame(ScreenGui, UDim2.new(1, 0, 1, 0), UDim2.new(0, 0, 0, 0), Color3.fromRGB(20, 20, 20), 0)
+    CreateGradient(LoadingScreen, Color3.fromRGB(20, 20, 20), Color3.fromRGB(40, 40, 40))
+    local loadLabel = CreateLabel(LoadingScreen, "MoonLight", UDim2.new(0.5, 0, 0.1, 0), UDim2.new(0.25, 0, 0.45, 0))
+    loadLabel.TextSize = 20
+    local subLabel = CreateLabel(LoadingScreen, "Loading...", UDim2.new(0.5, 0, 0.2, 0), UDim2.new(0.25, 0, 0.45, 20))
+    subLabel.TextSize = 14
+
+    local bar = CreateFrame(LoadingScreen, UDim2.new(0.3, 0, 0.01, 0), UDim2.new(0.35, 0, 0.55, 0), Color3.fromRGB(30, 30, 30))
+    CreateCorner(bar, 3)
+    local fill = CreateFrame(bar, UDim2.new(0, 0, 1, 0), UDim2.new(0, 0, 0, 0), Color3.fromRGB(0, 150, 255))
+    CreateCorner(fill, 3)
+
+    Animate(fill, TweenInfo.new(1, Enum.EasingStyle.Linear), {Size = UDim2.new(1, 0, 1, 0)})
+    Animate(loadLabel, TweenInfo.new(1, Enum.EasingStyle.Quint), {Rotation = 360})
+    wait(1)
+    Animate(LoadingScreen, TweenInfo.new(0.3, Enum.EasingStyle.Quint), {BackgroundTransparency = 1})
+    wait(0.3)
+    LoadingScreen:Destroy()
+end
+
+local function CreateWindow(name)
+    WindowCount = WindowCount + 1
+    ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "MoonLight"
+    ScreenGui.Parent = CoreGui
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.IgnoreGuiInset = true
+    ScreenGui.ResetOnSpawn = false -- Persist on death
+
+    ShowLoading()
+
+    MainFrame = CreateFrame(ScreenGui, UDim2.new(0, 800, 0, 400), UDim2.new(0.5, -400, 0.5, -200), Color3.fromRGB(20, 20, 20), 0.05)
+    CreateCorner(MainFrame, 8)
+    CreateGradient(MainFrame, Color3.fromRGB(20, 20, 20), Color3.fromRGB(40, 40, 40))
+    CreateStroke(MainFrame, Color3.fromRGB(60, 60, 60), 0.3)
+
+    local titleBar = CreateFrame(MainFrame, UDim2.new(1, 0, 0, 30), UDim2.new(0, 0, 0, 0), Color3.fromRGB(25, 25, 25), 0.1)
+    CreateCorner(titleBar, 0)
+    local title = CreateLabel(titleBar, "MoonLight", UDim2.new(1, -40, 1, 0), UDim2.new(0, 10, 0, 0))
+    title.Font = Enum.Font.GothamBlack
+    title.TextSize = 14
+
+    local closeButton = CreateFrame(titleBar, UDim2.new(0, 25, 0, 25), UDim2.new(1, -30, 0.5, -12.5), Color3.fromRGB(255, 50, 50), 0.2)
+    CreateCorner(closeButton, 4)
+    local closeLabel = CreateLabel(closeButton, "X", UDim2.new(1, 0, 1, 0), UDim2.new(0, 0, 0, 0))
+    closeLabel.TextSize = 12
+
+    closeButton.MouseButton1Click:Connect(function()
+        Animate(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {Size = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1})
+        wait(0.4)
+        ScreenGui:Destroy()
+        for _, conn in ipairs(Connections) do
+            conn:Disconnect()
+        end
+    end)
+
+    -- Drag functionality
+    local dragging = false
+    local dragStart, startPos
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+            titleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        end
+    end)
+    local dragConn = UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    titleBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+            Animate(titleBar, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25)})
+        end
+    end)
+    table.insert(Connections, dragConn)
+
+    local tabContainer = CreateFrame(MainFrame, UDim2.new(1, 0, 0, 30), UDim2.new(0, 0, 0, 30), Color3.fromRGB(25, 25, 25), 0.1)
+    local tabLayout = Instance.new("UIListLayout")
+    tabLayout.FillDirection = Enum.FillDirection.Horizontal
+    tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tabLayout.Padding = UDim.new(0, 2)
+    tabLayout.Parent = tabContainer
+
+    local contentContainer = CreateFrame(MainFrame, UDim2.new(1, 0, 1, -60), UDim2.new(0, 0, 0, 60), Color3.fromRGB(20, 20, 20), 0.05)
+
+    local tabs = {}
+    local first = true
+    local function addTab(name)
+        local tab = CreateTab(tabContainer, name, first)
+        tab.content.Parent = contentContainer
+        table.insert(tabs, tab.content)
+        if first then first = false end
+        return tab
+    end
+
+    local visible = false
+    local toggleConn = UserInputService.InputBegan:Connect(function(input)
+        if input.KeyCode == Enum.KeyCode.Insert then
+            visible = not visible
+            if visible then
+                MainFrame.Visible = true
+                Animate(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.05})
+            else
+                Animate(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {BackgroundTransparency = 1})
+                wait(0.4)
+                MainFrame.Visible = false
+            end
+        end
+    end)
+    table.insert(Connections, toggleConn)
+
+    MainFrame.Visible = false
+
+    return {
+        AddTab = addTab
+    }
+end
+
+MoonLight.CreateWindow = CreateWindow
+
+MoonLight.Notify = function(title, text, duration)
+    local notif = CreateFrame(ScreenGui, UDim2.new(0, 250, 0, 80), UDim2.new(1, 10, 1, -90 - (#Notifications * 90)), Color3.fromRGB(30, 30, 30), 0.1)
+    CreateCorner(notif, 6)
+    CreateStroke(notif, Color3.fromRGB(0, 150, 255), 0.4)
+    local titleLabel = CreateLabel(notif, title, UDim2.new(1, 0, 0.4, 0), UDim2.new(0, 10, 0, 5))
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 14
+    local textLabel = CreateLabel(notif, text, UDim2.new(1, 0, 0.6, 0), UDim2.new(0, 10, 0.4, 0))
+    textLabel.TextWrapped = true
+    textLabel.Font = Enum.Font.Gotham
+    textLabel.TextSize = 10
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+
+    table.insert(Notifications, notif)
+    Animate(notif, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {Position = UDim2.new(1, -260, notif.Position.Y.Scale, notif.Position.Y.Offset)})
+
+    spawn(function()
+        wait(duration or 4)
+        Animate(notif, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {Position = UDim2.new(1, 10, notif.Position.Y.Scale, notif.Position.Y.Offset)})
+        wait(0.4)
+        notif:Destroy()
+        table.remove(Notifications, table.find(Notifications, notif))
+        for i, n in ipairs(Notifications) do
+            Animate(n, TweenInfo.new(0.2), {Position = UDim2.new(1, -260, 1, -90 - ((i-1) * 90))})
+        end
+    end)
+end
+
+-- Return the library
+return MoonLight
